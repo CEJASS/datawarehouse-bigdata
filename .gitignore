@@ -1,0 +1,19 @@
+# Base de datos SQLite (regenerable con el ETL)
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos CSV de datos fuente (pueden ser grandes)
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
