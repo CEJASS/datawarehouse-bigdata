@@ -58,8 +58,10 @@ pip install -r requirements.txt
 ```
 
 Dependencias:
-- `faker` >= 24.0.0 — generación de datos sintéticos
+- `faker` >= 24.0.0 — generación de datos sintéticos (DIM_VENDEDOR)
 - `reportlab` >= 4.1.0 — generación del PDF
+- `Pillow` >= 10.0.0 — manejo de imágenes en el PDF
+- `matplotlib` >= 3.7.0 — generación del diagrama DER
 
 ---
 
@@ -71,17 +73,20 @@ Dependencias:
 python etl_carga_dimensiones.py
 ```
 
+Requiere los archivos CSV en la misma carpeta:
+`customers.csv`, `products.csv`, `orders.csv`, `order_details.csv`
+
 Esto genera `dw_ventas.db` (SQLite) con:
 
-| Tabla          | Registros |
-|----------------|-----------|
-| DIM_FECHA      | 366       |
-| DIM_PRODUCTO   | 150       |
-| DIM_CLIENTE    | 200       |
-| DIM_VENDEDOR   | 30        |
-| DIM_GEOGRAFIA  | 50        |
-| FACT_VENTAS    | 1 000     |
-| **TOTAL**      | **1 596** |
+| Tabla          | Registros  | Fuente                     |
+|----------------|------------|----------------------------|
+| DIM_FECHA      | 760        | Derivado de `orders.csv`   |
+| DIM_PRODUTO    | 2 000      | `products.csv`             |
+| DIM_CLIENTE    | 5 000      | `customers.csv`            |
+| DIM_VENDEDOR   | 30         | Faker (sin CSV disponible) |
+| DIM_GEOGRAFIA  | 50         | Datos predefinidos LATAM   |
+| FACT_VENTAS    | ~60 000    | `orders.csv` + `order_details.csv` |
+| **TOTAL**      | **~67 840**|                            |
 
 ### Paso 2 — Generar el informe PDF
 
@@ -100,15 +105,15 @@ diagrama ER, estadísticas ETL, vistas analíticas y conclusiones.
 
 | Dimensión | Descripción | Registros |
 |-----------|-------------|-----------|
-| `DIM_FECHA` | Calendario 2024 con indicadores de feriados y fines de semana | 366 |
-| `DIM_PRODUCTO` | Catálogo de 150 productos en 6 categorías con precio y proveedor | 150 |
-| `DIM_CLIENTE` | 200 clientes de LATAM y España segmentados por tipo y perfil | 200 |
+| `DIM_FECHA` | Calendario Sep 2023–Sep 2025 con indicadores de feriados y fines de semana | 760 |
+| `DIM_PRODUCTO` | Catálogo de 2 000 productos en 7 categorías con precio y proveedor (desde CSV) | 2 000 |
+| `DIM_CLIENTE` | 5 000 clientes de múltiples países segmentados por tipo y perfil (desde CSV) | 5 000 |
 | `DIM_VENDEDOR` | 30 vendedores organizados por región y zona | 30 |
 | `DIM_GEOGRAFIA` | 50 ciudades de LATAM y España con coordenadas reales | 50 |
 
 ### Tabla de hechos
 
-`FACT_VENTAS` — 1 000 transacciones con métricas: cantidad, precio, descuento, subtotal, impuesto y total.
+`FACT_VENTAS` — ~60 000 transacciones reales con métricas: cantidad, precio, descuento, subtotal, impuesto y total. Generada uniendo `orders.csv` y `order_details.csv`.
 
 ### Vistas analíticas
 
