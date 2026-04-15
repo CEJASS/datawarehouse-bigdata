@@ -1,18 +1,8 @@
-"""
-=============================================================
-GENERADOR DE INFORME PDF PROFESIONAL
-DATA WAREHOUSE: Sistema de Análisis de Ventas
-=============================================================
-Autor:    César Jasser de Jesús  |  Matrícula: #2023-1747
-Materia:  Big Data / Electiva 1  |  Profesor: Francis Ramírez
-Genera:   Informe_Carga_DW_Ventas.pdf
-=============================================================
-"""
-
 import sqlite3
 import os
 import time
 from datetime import datetime
+from io import BytesIO
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -21,89 +11,82 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, HRFlowable, KeepTogether,
+    PageBreak, HRFlowable, KeepTogether, Flowable,
 )
 from reportlab.platypus import Image as RLImage
 from reportlab.pdfgen import canvas
 
-# ── Constantes ────────────────────────────────────────────────────────────────
-DB_FILE      = "dw_ventas.db"
-OUTPUT_PDF   = "Informe_Carga_DW_Ventas.pdf"
-DER_IMAGE    = "DER_SistemaVentas.png"
+DB_FILE    = "dw_ventas.db"
+OUTPUT_PDF = "Informe_Carga_DW_Ventas.pdf"
+DER_IMAGE  = "DER_SistemaVentas.png"
 
-# Colores institucionales
-AZUL_OSCURO  = colors.HexColor("#2E4057")
-AZUL_MEDIO   = colors.HexColor("#4A7098")
-GRIS_CLARO   = colors.HexColor("#F2F4F6")
-GRIS_LINEA   = colors.HexColor("#CCCCCC")
-BLANCO       = colors.white
-NARANJA      = colors.HexColor("#E8833A")
+AZUL_OSCURO = colors.HexColor("#2E4057")
+AZUL_MEDIO  = colors.HexColor("#4A7098")
+GRIS_CLARO  = colors.HexColor("#F2F4F6")
+GRIS_LINEA  = colors.HexColor("#CCCCCC")
+BLANCO      = colors.white
+NARANJA     = colors.HexColor("#E8833A")
 
 PAGE_W, PAGE_H = A4
 MARGEN = 2.0 * cm
 
-# ── Estilos ───────────────────────────────────────────────────────────────────
 estilos = getSampleStyleSheet()
+
 
 def _estilo(name, parent="Normal", **kwargs):
     return ParagraphStyle(name=name, parent=estilos[parent], **kwargs)
 
-EST_TITULO_PORT  = _estilo("TituloPort",  "Title",
-                            fontSize=22, textColor=BLANCO, alignment=TA_CENTER,
-                            spaceAfter=8, leading=28)
-EST_SUBTITULO_P  = _estilo("SubtPort",   "Normal",
-                            fontSize=14, textColor=colors.HexColor("#BDD5EA"),
-                            alignment=TA_CENTER, spaceAfter=4)
-EST_META_PORT    = _estilo("MetaPort",   "Normal",
-                            fontSize=11, textColor=BLANCO, alignment=TA_CENTER,
-                            spaceAfter=3)
-EST_H1           = _estilo("H1",         "Heading1",
-                            fontSize=14, textColor=AZUL_OSCURO,
-                            spaceBefore=14, spaceAfter=6, leading=18)
-EST_H2           = _estilo("H2",         "Heading2",
-                            fontSize=11, textColor=AZUL_MEDIO,
-                            spaceBefore=10, spaceAfter=4)
-EST_NORMAL       = _estilo("Normal2",    "Normal",
-                            fontSize=9.5, leading=14, spaceAfter=4)
-EST_JUSTIF       = _estilo("Justif",     "Normal",
-                            fontSize=9.5, leading=14, spaceAfter=4,
-                            alignment=TA_JUSTIFY)
-EST_TABLA_HDR    = _estilo("TabHdr",     "Normal",
-                            fontSize=9, textColor=BLANCO, alignment=TA_CENTER)
-EST_TABLA_CELL   = _estilo("TabCell",    "Normal",
-                            fontSize=8.5, alignment=TA_LEFT, leading=12)
-EST_TABLA_CELLC  = _estilo("TabCellC",   "Normal",
-                            fontSize=8.5, alignment=TA_CENTER, leading=12)
-EST_PIE          = _estilo("Pie",        "Normal",
-                            fontSize=8, textColor=colors.grey, alignment=TA_CENTER)
 
-# ── Helpers de tablas ─────────────────────────────────────────────────────────
+EST_TITULO_PORT = _estilo("TituloPort", "Title",
+                           fontSize=22, textColor=BLANCO, alignment=TA_CENTER,
+                           spaceAfter=8, leading=28)
+EST_SUBTITULO_P = _estilo("SubtPort", "Normal",
+                           fontSize=14, textColor=colors.HexColor("#BDD5EA"),
+                           alignment=TA_CENTER, spaceAfter=4)
+EST_META_PORT   = _estilo("MetaPort", "Normal",
+                           fontSize=11, textColor=BLANCO, alignment=TA_CENTER,
+                           spaceAfter=3)
+EST_H1          = _estilo("H1", "Heading1",
+                           fontSize=14, textColor=AZUL_OSCURO,
+                           spaceBefore=14, spaceAfter=6, leading=18)
+EST_H2          = _estilo("H2", "Heading2",
+                           fontSize=11, textColor=AZUL_MEDIO,
+                           spaceBefore=10, spaceAfter=4)
+EST_NORMAL      = _estilo("Normal2", "Normal",
+                           fontSize=9.5, leading=14, spaceAfter=4)
+EST_JUSTIF      = _estilo("Justif", "Normal",
+                           fontSize=9.5, leading=14, spaceAfter=4,
+                           alignment=TA_JUSTIFY)
+EST_TABLA_HDR   = _estilo("TabHdr", "Normal",
+                           fontSize=9, textColor=BLANCO, alignment=TA_CENTER)
+EST_TABLA_CELL  = _estilo("TabCell", "Normal",
+                           fontSize=8.5, alignment=TA_LEFT, leading=12)
+EST_TABLA_CELLC = _estilo("TabCellC", "Normal",
+                           fontSize=8.5, alignment=TA_CENTER, leading=12)
+EST_PIE         = _estilo("Pie", "Normal",
+                           fontSize=8, textColor=colors.grey, alignment=TA_CENTER)
+
 
 def estilo_tabla_base(col_widths, header_bg=AZUL_OSCURO):
-    """Devuelve un TableStyle estándar con filas alternadas."""
     return TableStyle([
-        ("BACKGROUND",    (0, 0), (-1,  0), header_bg),
-        ("TEXTCOLOR",     (0, 0), (-1,  0), BLANCO),
-        ("FONTNAME",      (0, 0), (-1,  0), "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1,  0), 9),
-        ("ALIGN",         (0, 0), (-1,  0), "CENTER"),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [BLANCO, GRIS_CLARO]),
-        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE",      (0, 1), (-1, -1), 8.5),
-        ("GRID",          (0, 0), (-1, -1), 0.4, GRIS_LINEA),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND",     (0, 0), (-1,  0), header_bg),
+        ("TEXTCOLOR",      (0, 0), (-1,  0), BLANCO),
+        ("FONTNAME",       (0, 0), (-1,  0), "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0), (-1,  0), 9),
+        ("ALIGN",          (0, 0), (-1,  0), "CENTER"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [BLANCO, GRIS_CLARO]),
+        ("FONTNAME",       (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",       (0, 1), (-1, -1), 8.5),
+        ("GRID",           (0, 0), (-1, -1), 0.4, GRIS_LINEA),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 5),
+        ("TOPPADDING",     (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
     ])
 
 
-# ── Encabezado y pie de página ────────────────────────────────────────────────
-
 class NumeradorPaginas:
-    """Manejador de encabezado/pie para SimpleDocTemplate."""
-
     def __init__(self, total_pages=0):
         self.total = total_pages
 
@@ -111,7 +94,6 @@ class NumeradorPaginas:
         canv.saveState()
         w, h = A4
 
-        # — Encabezado —
         canv.setFillColor(AZUL_OSCURO)
         canv.rect(MARGEN, h - MARGEN - 0.7*cm, w - 2*MARGEN, 0.7*cm, fill=1, stroke=0)
         canv.setFillColor(BLANCO)
@@ -120,9 +102,8 @@ class NumeradorPaginas:
                         "DW Ventas — Sistema de Análisis de Ventas")
         canv.setFont("Helvetica", 8)
         canv.drawRightString(w - MARGEN - 0.2*cm, h - MARGEN - 0.45*cm,
-                             f"Big Data / Electiva 1  |  Actividad 3.1")
+                             "Big Data / Electiva 1  |  Actividad 3.1")
 
-        # — Pie de página —
         canv.setFillColor(GRIS_LINEA)
         canv.rect(MARGEN, MARGEN, w - 2*MARGEN, 0.6*cm, fill=1, stroke=0)
         canv.setFillColor(colors.HexColor("#555555"))
@@ -134,29 +115,7 @@ class NumeradorPaginas:
         canv.restoreState()
 
 
-# ── Portada ───────────────────────────────────────────────────────────────────
-
 def construir_portada(elements):
-    """Página de portada con fondo azul y datos del estudiante."""
-    w, h = A4
-
-    class _Portada:
-        def draw(self_inner, canv, doc):
-            canv.saveState()
-            # Fondo completo azul oscuro
-            canv.setFillColor(AZUL_OSCURO)
-            canv.rect(0, 0, w, h, fill=1, stroke=0)
-            # Banda superior decorativa
-            canv.setFillColor(AZUL_MEDIO)
-            canv.rect(0, h - 5*cm, w, 5*cm, fill=1, stroke=0)
-            # Banda inferior
-            canv.setFillColor(AZUL_MEDIO)
-            canv.rect(0, 0, w, 2.5*cm, fill=1, stroke=0)
-            canv.restoreState()
-
-    # Usamos un flowable especial de fondo
-    from reportlab.platypus import Flowable
-
     class FondoPortada(Flowable):
         def __init__(self):
             Flowable.__init__(self)
@@ -177,18 +136,17 @@ def construir_portada(elements):
     elements.append(FondoPortada())
     elements.append(Spacer(1, 3.5*cm))
 
-    # Ícono / badge de texto
     badge_data = [["DW"]]
     badge = Table(badge_data, colWidths=[3*cm], rowHeights=[3*cm])
     badge.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0),(0,0), AZUL_MEDIO),
-        ("TEXTCOLOR",    (0,0),(0,0), BLANCO),
-        ("FONTNAME",     (0,0),(0,0), "Helvetica-Bold"),
-        ("FONTSIZE",     (0,0),(0,0), 28),
-        ("ALIGN",        (0,0),(0,0), "CENTER"),
-        ("VALIGN",       (0,0),(0,0), "MIDDLE"),
-        ("ROUNDEDCORNERS",(0,0),(0,0),8),
-        ("BOX",          (0,0),(0,0), 2, NARANJA),
+        ("BACKGROUND",    (0, 0), (0, 0), AZUL_MEDIO),
+        ("TEXTCOLOR",     (0, 0), (0, 0), BLANCO),
+        ("FONTNAME",      (0, 0), (0, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (0, 0), 28),
+        ("ALIGN",         (0, 0), (0, 0), "CENTER"),
+        ("VALIGN",        (0, 0), (0, 0), "MIDDLE"),
+        ("ROUNDEDCORNERS",(0, 0), (0, 0), 8),
+        ("BOX",           (0, 0), (0, 0), 2, NARANJA),
     ]))
     elements.append(Table([[badge]], colWidths=[PAGE_W - 2*MARGEN]))
     elements.append(Spacer(1, 1.2*cm))
@@ -205,32 +163,29 @@ def construir_portada(elements):
     elements.append(p("Actividad 3.1", EST_META_PORT))
     elements.append(Spacer(1, 1.5*cm))
 
-    # Tabla de metadatos
     meta = [
-        ["Estudiante:",  "César Jasser de Jesús"],
-        ["Matrícula:",   "#2023-1747"],
-        ["Materia:",     "Big Data / Electiva 1"],
-        ["Profesor:",    "Francis Ramírez"],
-        ["Fecha:",       datetime.now().strftime("%d de %B de %Y — %H:%M")],
+        ["Estudiante:", "César Jasser de Jesús"],
+        ["Matrícula:",  "#2023-1747"],
+        ["Materia:",    "Big Data / Electiva 1"],
+        ["Profesor:",   "Francis Ramírez"],
+        ["Fecha:",      datetime.now().strftime("%d de %B de %Y — %H:%M")],
     ]
     tbl = Table(meta, colWidths=[4.5*cm, 9*cm])
     tbl.setStyle(TableStyle([
-        ("TEXTCOLOR",  (0,0),(0,-1), colors.HexColor("#BDD5EA")),
-        ("TEXTCOLOR",  (1,0),(1,-1), BLANCO),
-        ("FONTNAME",   (0,0),(0,-1), "Helvetica-Bold"),
-        ("FONTNAME",   (1,0),(1,-1), "Helvetica"),
-        ("FONTSIZE",   (0,0),(-1,-1), 10.5),
-        ("LEADING",    (0,0),(-1,-1), 16),
-        ("ALIGN",      (0,0),(0,-1), "RIGHT"),
-        ("ALIGN",      (1,0),(1,-1), "LEFT"),
-        ("TOPPADDING", (0,0),(-1,-1), 3),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 3),
+        ("TEXTCOLOR",       (0, 0), (0, -1), colors.HexColor("#BDD5EA")),
+        ("TEXTCOLOR",       (1, 0), (1, -1), BLANCO),
+        ("FONTNAME",        (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME",        (1, 0), (1, -1), "Helvetica"),
+        ("FONTSIZE",        (0, 0), (-1, -1), 10.5),
+        ("LEADING",         (0, 0), (-1, -1), 16),
+        ("ALIGN",           (0, 0), (0, -1), "RIGHT"),
+        ("ALIGN",           (1, 0), (1, -1), "LEFT"),
+        ("TOPPADDING",      (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING",   (0, 0), (-1, -1), 3),
     ]))
     elements.append(tbl)
     elements.append(PageBreak())
 
-
-# ── Sección 1 — Descripción del proyecto ─────────────────────────────────────
 
 def seccion_descripcion(elements):
     elements.append(Paragraph("1. Descripción del Proyecto", EST_H1))
@@ -270,8 +225,6 @@ total_venta) que pueden ser sumadas en cualquier combinación dimensional.
         elements.append(Spacer(1, 0.3*cm))
 
 
-# ── Sección 2 — Tablas cargadas ───────────────────────────────────────────────
-
 DEFINICION_TABLAS = {
     "DIM_FECHA": {
         "proposito": "Dimensión temporal con granularidad diaria. Permite análisis por año, trimestre, mes, semana y día, incluyendo indicadores de fin de semana y feriados.",
@@ -293,18 +246,18 @@ DEFINICION_TABLAS = {
     "DIM_PRODUCTO": {
         "proposito": "Dimensión de productos del catálogo comercial. Incluye categoría, subcategoría, precio base y datos del proveedor para análisis por línea de producto.",
         "campos": [
-            ("id_producto",     "INTEGER",  "Clave primaria autoincremental"),
-            ("codigo_sku",      "TEXT",     "Código único de inventario"),
-            ("nombre_producto", "TEXT",     "Nombre comercial del producto"),
-            ("categoria",       "TEXT",     "Categoría principal"),
-            ("subcategoria",    "TEXT",     "Subcategoría específica"),
-            ("precio_base",     "REAL",     "Precio de lista en USD"),
-            ("unidad_medida",   "TEXT",     "Unidad de medida (Pieza, Kg, etc.)"),
-            ("proveedor",       "TEXT",     "Nombre del proveedor"),
-            ("pais_origen",     "TEXT",     "País de fabricación"),
-            ("activo",          "BIT",      "1 = Producto disponible"),
-            ("fuente_datos",    "TEXT",     "Origen del registro (CSV/API/BD_EXTERNA)"),
-            ("fecha_carga",     "TEXT",     "Timestamp de inserción ETL"),
+            ("id_producto",     "INTEGER", "Clave primaria autoincremental"),
+            ("codigo_sku",      "TEXT",    "Código único de inventario"),
+            ("nombre_producto", "TEXT",    "Nombre comercial del producto"),
+            ("categoria",       "TEXT",    "Categoría principal"),
+            ("subcategoria",    "TEXT",    "Subcategoría específica"),
+            ("precio_base",     "REAL",    "Precio de lista en USD"),
+            ("unidad_medida",   "TEXT",    "Unidad de medida (Pieza, Kg, etc.)"),
+            ("proveedor",       "TEXT",    "Nombre del proveedor"),
+            ("pais_origen",     "TEXT",    "País de fabricación"),
+            ("activo",          "BIT",     "1 = Producto disponible"),
+            ("fuente_datos",    "TEXT",    "Origen del registro (CSV/API/BD_EXTERNA)"),
+            ("fecha_carga",     "TEXT",    "Timestamp de inserción ETL"),
         ],
         "query_muestra": "SELECT id_producto, codigo_sku, nombre_producto, categoria, precio_base, fuente_datos FROM DIM_PRODUCTO LIMIT 5",
     },
@@ -361,21 +314,21 @@ DEFINICION_TABLAS = {
     "FACT_VENTAS": {
         "proposito": "Tabla de hechos central. Registra cada transacción de venta con claves foráneas a las cinco dimensiones y las métricas numéricas aditivas.",
         "campos": [
-            ("id_venta",        "BIGINT",  "Clave primaria autoincremental"),
-            ("id_fecha",        "FK→DIM_FECHA",      "Fecha de la transacción"),
-            ("id_producto",     "FK→DIM_PRODUCTO",   "Producto vendido"),
-            ("id_cliente",      "FK→DIM_CLIENTE",    "Cliente comprador"),
-            ("id_vendedor",     "FK→DIM_VENDEDOR",   "Vendedor responsable"),
-            ("id_geografia",    "FK→DIM_GEOGRAFIA",  "Ubicación de la venta"),
-            ("numero_factura",  "TEXT",    "Número de comprobante fiscal"),
-            ("cantidad",        "INTEGER", "Unidades vendidas"),
-            ("precio_unitario", "REAL",    "Precio de venta unitario en USD"),
-            ("descuento",       "REAL",    "Porcentaje de descuento aplicado"),
-            ("subtotal",        "REAL",    "cantidad × precio_unitario"),
-            ("impuesto",        "REAL",    "subtotal × 18%"),
-            ("total_venta",     "REAL",    "subtotal + impuesto − descuento"),
-            ("moneda",          "CHAR(3)", "Divisa — siempre USD"),
-            ("fuente_datos",    "TEXT",    "Sistema origen del registro"),
+            ("id_venta",        "BIGINT",             "Clave primaria autoincremental"),
+            ("id_fecha",        "FK→DIM_FECHA",       "Fecha de la transacción"),
+            ("id_producto",     "FK→DIM_PRODUCTO",    "Producto vendido"),
+            ("id_cliente",      "FK→DIM_CLIENTE",     "Cliente comprador"),
+            ("id_vendedor",     "FK→DIM_VENDEDOR",    "Vendedor responsable"),
+            ("id_geografia",    "FK→DIM_GEOGRAFIA",   "Ubicación de la venta"),
+            ("numero_factura",  "TEXT",               "Número de comprobante fiscal"),
+            ("cantidad",        "INTEGER",            "Unidades vendidas"),
+            ("precio_unitario", "REAL",               "Precio de venta unitario en USD"),
+            ("descuento",       "REAL",               "Porcentaje de descuento aplicado"),
+            ("subtotal",        "REAL",               "cantidad × precio_unitario"),
+            ("impuesto",        "REAL",               "subtotal × 18%"),
+            ("total_venta",     "REAL",               "subtotal + impuesto − descuento"),
+            ("moneda",          "CHAR(3)",            "Divisa — siempre USD"),
+            ("fuente_datos",    "TEXT",               "Sistema origen del registro"),
         ],
         "query_muestra": "SELECT id_venta, numero_factura, cantidad, precio_unitario, descuento, total_venta, moneda FROM FACT_VENTAS LIMIT 5",
     },
@@ -389,17 +342,14 @@ def seccion_tablas(elements, conn):
     cur = conn.cursor()
 
     for tabla, info in DEFINICION_TABLAS.items():
-        # Sub-encabezado de tabla
         elements.append(Paragraph(tabla, EST_H2))
         elements.append(Paragraph(info["proposito"], EST_JUSTIF))
         elements.append(Spacer(1, 0.2*cm))
 
-        # Total de registros
         count = cur.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0]
         elements.append(Paragraph(f"<b>Total de registros cargados:</b> {count:,}", EST_NORMAL))
         elements.append(Spacer(1, 0.2*cm))
 
-        # Tabla de definición de campos
         hdr = [
             Paragraph("<b>Campo</b>",       EST_TABLA_HDR),
             Paragraph("<b>Tipo</b>",        EST_TABLA_HDR),
@@ -415,7 +365,6 @@ def seccion_tablas(elements, conn):
         elements.append(tbl_def)
         elements.append(Spacer(1, 0.4*cm))
 
-        # Muestra de 5 filas
         elements.append(Paragraph("<b>Muestra de datos (5 registros):</b>", EST_NORMAL))
         try:
             cur.execute(info["query_muestra"])
@@ -423,9 +372,10 @@ def seccion_tablas(elements, conn):
             rows = cur.fetchall()
 
             hdr_m = [Paragraph(f"<b>{c}</b>", EST_TABLA_HDR) for c in col_names]
-            filas_m = [hdr_m]
-            for row in rows:
-                filas_m.append([Paragraph(str(v) if v is not None else "—", EST_TABLA_CELLC) for v in row])
+            filas_m = [hdr_m] + [
+                [Paragraph(str(v) if v is not None else "—", EST_TABLA_CELLC) for v in row]
+                for row in rows
+            ]
 
             col_w = (PAGE_W - 2*MARGEN) / len(col_names)
             col_widths_m = [col_w] * len(col_names)
@@ -437,8 +387,6 @@ def seccion_tablas(elements, conn):
 
         elements.append(Spacer(1, 0.6*cm))
 
-
-# ── Sección 3 — Diagrama ──────────────────────────────────────────────────────
 
 def seccion_diagrama(elements):
     elements.append(Paragraph("3. Diagrama Entidad-Relación (Star Schema)", EST_H1))
@@ -454,7 +402,6 @@ def seccion_diagrama(elements):
                     alignment=TA_CENTER, spaceAfter=6),
         ))
     else:
-        # Diagrama textual de respaldo
         elements.append(Paragraph(
             "El archivo <i>DER_SistemaVentas.png</i> no se encontró en el directorio. "
             "A continuación se presenta una representación esquemática del modelo:",
@@ -472,22 +419,22 @@ def seccion_diagrama(elements):
         ]
         tbl_schema = Table(schema, colWidths=[3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
         tbl_schema.setStyle(TableStyle([
-            ("BACKGROUND", (2, 2), (2, 3), AZUL_OSCURO),
-            ("TEXTCOLOR",  (2, 2), (2, 3), BLANCO),
-            ("BACKGROUND", (1, 0), (1, 1), AZUL_MEDIO),
-            ("BACKGROUND", (3, 0), (3, 1), AZUL_MEDIO),
-            ("BACKGROUND", (0, 2), (0, 3), AZUL_MEDIO),
-            ("BACKGROUND", (4, 2), (4, 3), AZUL_MEDIO),
-            ("BACKGROUND", (1, 4), (1, 5), AZUL_MEDIO),
-            ("TEXTCOLOR",  (0, 0), (-1,-1), BLANCO),
-            ("FONTNAME",   (0, 0), (-1,-1), "Helvetica-Bold"),
-            ("FONTSIZE",   (0, 0), (-1,-1), 8),
-            ("ALIGN",      (0, 0), (-1,-1), "CENTER"),
-            ("VALIGN",     (0, 0), (-1,-1), "MIDDLE"),
-            ("ROWBACKGROUNDS",(0,0),(-1,-1),[GRIS_CLARO, BLANCO, AZUL_OSCURO, GRIS_CLARO, BLANCO, GRIS_CLARO]),
-            ("GRID",       (0, 0), (-1,-1), 0.3, GRIS_LINEA),
-            ("TOPPADDING", (0, 0), (-1,-1), 6),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+            ("BACKGROUND",    (2, 2), (2, 3), AZUL_OSCURO),
+            ("TEXTCOLOR",     (2, 2), (2, 3), BLANCO),
+            ("BACKGROUND",    (1, 0), (1, 1), AZUL_MEDIO),
+            ("BACKGROUND",    (3, 0), (3, 1), AZUL_MEDIO),
+            ("BACKGROUND",    (0, 2), (0, 3), AZUL_MEDIO),
+            ("BACKGROUND",    (4, 2), (4, 3), AZUL_MEDIO),
+            ("BACKGROUND",    (1, 4), (1, 5), AZUL_MEDIO),
+            ("TEXTCOLOR",     (0, 0), (-1, -1), BLANCO),
+            ("FONTNAME",      (0, 0), (-1, -1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS",(0, 0), (-1, -1), [GRIS_CLARO, BLANCO, AZUL_OSCURO, GRIS_CLARO, BLANCO, GRIS_CLARO]),
+            ("GRID",          (0, 0), (-1, -1), 0.3, GRIS_LINEA),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]))
         elements.append(tbl_schema)
 
@@ -501,24 +448,24 @@ def seccion_diagrama(elements):
     ))
 
 
-# ── Sección 4 — Estadísticas ETL ─────────────────────────────────────────────
-
 def seccion_estadisticas(elements, conn, inicio_generacion: float):
     elements.append(Paragraph("4. Estadísticas del Proceso ETL", EST_H1))
     elements.append(HRFlowable(width="100%", thickness=1, color=AZUL_OSCURO, spaceAfter=8))
 
     cur = conn.cursor()
 
-    # Totales por tabla
     tablas = ["DIM_FECHA", "DIM_PRODUCTO", "DIM_CLIENTE",
               "DIM_VENDEDOR", "DIM_GEOGRAFIA", "FACT_VENTAS"]
+    tipos = {
+        "DIM_FECHA": "Dimensión", "DIM_PRODUCTO": "Dimensión",
+        "DIM_CLIENTE": "Dimensión", "DIM_VENDEDOR": "Dimensión",
+        "DIM_GEOGRAFIA": "Dimensión", "FACT_VENTAS": "Hechos",
+    }
+
     hdr = [Paragraph(f"<b>{h}</b>", EST_TABLA_HDR)
            for h in ["Tabla", "Registros Cargados", "Tipo"]]
     filas = [hdr]
     total_regs = 0
-    tipos = {"DIM_FECHA": "Dimensión", "DIM_PRODUCTO": "Dimensión",
-             "DIM_CLIENTE": "Dimensión", "DIM_VENDEDOR": "Dimensión",
-             "DIM_GEOGRAFIA": "Dimensión", "FACT_VENTAS": "Hechos"}
     for t in tablas:
         c = cur.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         total_regs += c
@@ -537,7 +484,6 @@ def seccion_estadisticas(elements, conn, inicio_generacion: float):
     elements.append(tbl)
     elements.append(Spacer(1, 0.5*cm))
 
-    # Distribución de fuente_datos
     elements.append(Paragraph("<b>Distribución por Fuente de Datos:</b>", EST_H2))
     fuentes_tablas = ["DIM_PRODUCTO", "DIM_CLIENTE", "FACT_VENTAS"]
     hdr_f = [Paragraph(f"<b>{h}</b>", EST_TABLA_HDR)
@@ -563,34 +509,31 @@ def seccion_estadisticas(elements, conn, inicio_generacion: float):
     elements.append(tbl_f)
     elements.append(Spacer(1, 0.5*cm))
 
-    # Metadatos de ejecución
     tiempo_gen = time.perf_counter() - inicio_generacion
     meta_data = [
-        ["Fecha de ejecución:",    datetime.now().strftime("%Y-%m-%d")],
-        ["Hora de ejecución:",     datetime.now().strftime("%H:%M:%S")],
-        ["Tiempo total del ETL:",  "Ver salida de etl_carga_dimensiones.py"],
-        ["Tiempo generac. PDF:",   f"{tiempo_gen:.2f} segundos"],
-        ["Motor de base de datos:","SQLite 3 (portabilidad local)"],
-        ["Motor objetivo:",        "MySQL 8.x (producción)"],
-        ["Total registros:",       f"{total_regs:,}"],
+        ["Fecha de ejecución:",     datetime.now().strftime("%Y-%m-%d")],
+        ["Hora de ejecución:",      datetime.now().strftime("%H:%M:%S")],
+        ["Tiempo total del ETL:",   "Ver salida de etl_carga_dimensiones.py"],
+        ["Tiempo generac. PDF:",    f"{tiempo_gen:.2f} segundos"],
+        ["Motor de base de datos:", "SQLite 3 (portabilidad local)"],
+        ["Motor objetivo:",         "MySQL 8.x (producción)"],
+        ["Total registros:",        f"{total_regs:,}"],
     ]
     elements.append(Paragraph("<b>Metadatos de Ejecución:</b>", EST_H2))
     tbl_meta = Table(meta_data, colWidths=[6*cm, 11.5*cm])
     tbl_meta.setStyle(TableStyle([
-        ("FONTNAME",  (0,0),(0,-1), "Helvetica-Bold"),
-        ("FONTSIZE",  (0,0),(-1,-1), 9.5),
-        ("LEADING",   (0,0),(-1,-1), 14),
-        ("ROWBACKGROUNDS",(0,0),(-1,-1),[GRIS_CLARO, BLANCO]),
-        ("GRID",      (0,0),(-1,-1), 0.4, GRIS_LINEA),
-        ("LEFTPADDING",(0,0),(-1,-1), 6),
-        ("RIGHTPADDING",(0,0),(-1,-1), 6),
-        ("TOPPADDING",(0,0),(-1,-1), 4),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 4),
+        ("FONTNAME",        (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE",        (0, 0), (-1, -1), 9.5),
+        ("LEADING",         (0, 0), (-1, -1), 14),
+        ("ROWBACKGROUNDS",  (0, 0), (-1, -1), [GRIS_CLARO, BLANCO]),
+        ("GRID",            (0, 0), (-1, -1), 0.4, GRIS_LINEA),
+        ("LEFTPADDING",     (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",    (0, 0), (-1, -1), 6),
+        ("TOPPADDING",      (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",   (0, 0), (-1, -1), 4),
     ]))
     elements.append(tbl_meta)
 
-
-# ── Sección 5 — Vistas analíticas ────────────────────────────────────────────
 
 VISTAS = [
     ("VW_VENTAS_POR_PRODUCTO",
@@ -635,8 +578,6 @@ def seccion_vistas(elements):
     elements.append(tbl)
 
 
-# ── Sección 6 — Conclusiones ──────────────────────────────────────────────────
-
 def seccion_conclusiones(elements):
     elements.append(Paragraph("6. Conclusiones", EST_H1))
     elements.append(HRFlowable(width="100%", thickness=1, color=AZUL_OSCURO, spaceAfter=8))
@@ -646,22 +587,18 @@ def seccion_conclusiones(elements):
          "El modelo estrella diseñado cumple con los requerimientos de análisis multidimensional "
          "establecidos. La separación clara entre la tabla de hechos y las dimensiones facilita "
          "la incorporación de nuevas métricas y atributos sin impactar la estructura central."),
-
         ("Proceso ETL funcional y reproducible",
          "El script etl_carga_dimensiones.py genera datos representativos para 1,596 registros "
          "distribuidos en cinco dimensiones y la tabla de hechos, con tiempos de carga inferiores "
          "a 5 segundos. La estructura modular del código facilita su adaptación a fuentes de datos reales."),
-
         ("Diversidad de fuentes de datos",
          "La simulación de tres fuentes distintas (CSV, API, BD_EXTERNA) en las dimensiones y la "
          "tabla de hechos refleja un escenario realista de integración empresarial, donde los datos "
          "provienen de sistemas heterogéneos que deben ser consolidados."),
-
         ("Portabilidad del prototipo",
          "El uso de SQLite como motor de desarrollo permite ejecutar y demostrar el DW sin "
          "infraestructura adicional. La migración a MySQL 8.x en producción requiere únicamente "
          "cambiar la cadena de conexión en el script, dado que el DDL es compatible."),
-
         ("Capacidades analíticas habilitadas",
          "Las seis vistas implementadas cubren los casos de uso principales: análisis por producto, "
          "cliente, período temporal, región geográfica y rankings. Estas vistas constituyen la base "
@@ -673,8 +610,6 @@ def seccion_conclusiones(elements):
         elements.append(Paragraph(texto, EST_JUSTIF))
         elements.append(Spacer(1, 0.2*cm))
 
-
-# ── Sección 7 — Repositorio GitHub ───────────────────────────────────────────
 
 def seccion_github(elements):
     elements.append(Paragraph("7. Repositorio GitHub", EST_H1))
@@ -694,28 +629,28 @@ def seccion_github(elements):
     ]
     tbl = Table(repo_data, colWidths=[4*cm, 13.5*cm])
     tbl.setStyle(TableStyle([
-        ("FONTNAME",  (0,0),(0,-1), "Helvetica-Bold"),
-        ("FONTSIZE",  (0,0),(-1,-1), 10),
-        ("LEADING",   (0,0),(-1,-1), 16),
-        ("ROWBACKGROUNDS",(0,0),(-1,-1),[GRIS_CLARO, BLANCO, GRIS_CLARO]),
-        ("GRID",      (0,0),(-1,-1), 0.4, GRIS_LINEA),
-        ("LEFTPADDING",(0,0),(-1,-1), 8),
-        ("TOPPADDING",(0,0),(-1,-1), 6),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 6),
-        ("TEXTCOLOR", (1,0),(1,0), AZUL_MEDIO),
+        ("FONTNAME",        (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE",        (0, 0), (-1, -1), 10),
+        ("LEADING",         (0, 0), (-1, -1), 16),
+        ("ROWBACKGROUNDS",  (0, 0), (-1, -1), [GRIS_CLARO, BLANCO, GRIS_CLARO]),
+        ("GRID",            (0, 0), (-1, -1), 0.4, GRIS_LINEA),
+        ("LEFTPADDING",     (0, 0), (-1, -1), 8),
+        ("TOPPADDING",      (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",   (0, 0), (-1, -1), 6),
+        ("TEXTCOLOR",       (1, 0), (1, 0), AZUL_MEDIO),
     ]))
     elements.append(tbl)
     elements.append(Spacer(1, 0.5*cm))
 
     elements.append(Paragraph("<b>Contenido del repositorio:</b>", EST_H2))
     archivos = [
-        ("etl_carga_dimensiones.py",  "Script ETL principal — crea tablas y carga datos de prueba"),
-        ("generar_informe_pdf.py",     "Generador del informe PDF (este documento)"),
-        ("script_DW_ventas.sql",       "DDL completo para MySQL 8.x con vistas analíticas"),
-        ("DER_SistemaVentas.png",      "Diagrama Entidad-Relación del Star Schema"),
-        ("Informe_Carga_DW_Ventas.pdf","Informe de actividad generado automáticamente"),
-        ("requirements.txt",           "Dependencias Python del proyecto"),
-        ("README.md",                  "Documentación del proyecto"),
+        ("etl_carga_dimensiones.py",   "Script ETL principal — crea tablas y carga datos de prueba"),
+        ("generar_informe_pdf.py",      "Generador del informe PDF (este documento)"),
+        ("script_DW_ventas.sql",        "DDL completo para MySQL 8.x con vistas analíticas"),
+        ("DER_SistemaVentas.png",       "Diagrama Entidad-Relación del Star Schema"),
+        ("Informe_Carga_DW_Ventas.pdf", "Informe de actividad generado automáticamente"),
+        ("requirements.txt",            "Dependencias Python del proyecto"),
+        ("README.md",                   "Documentación del proyecto"),
     ]
     hdr = [Paragraph(f"<b>{h}</b>", EST_TABLA_HDR) for h in ["Archivo", "Descripción"]]
     filas = [hdr] + [
@@ -727,75 +662,48 @@ def seccion_github(elements):
     elements.append(tbl_arch)
 
 
-# ── Función principal ─────────────────────────────────────────────────────────
+def _build_elements(conn, inicio):
+    elements = []
+    construir_portada(elements)
+    seccion_descripcion(elements)
+    elements.append(PageBreak())
+    seccion_tablas(elements, conn)
+    elements.append(PageBreak())
+    seccion_diagrama(elements)
+    elements.append(PageBreak())
+    seccion_estadisticas(elements, conn, inicio)
+    elements.append(PageBreak())
+    seccion_vistas(elements)
+    elements.append(PageBreak())
+    seccion_conclusiones(elements)
+    elements.append(PageBreak())
+    seccion_github(elements)
+    return elements
+
+
+def _count_pages(elements):
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                             leftMargin=MARGEN, rightMargin=MARGEN,
+                             topMargin=MARGEN + 1.2*cm, bottomMargin=MARGEN + 1.2*cm)
+    doc.build(list(elements))
+    return doc.page
+
 
 def main():
     inicio = time.perf_counter()
     print(f"[INFO] Generando {OUTPUT_PDF}...")
 
-    # Conectar a la BD
     if not os.path.exists(DB_FILE):
         print(f"[ERROR] No se encontró {DB_FILE}. Ejecute primero etl_carga_dimensiones.py")
         return
 
     conn = sqlite3.connect(DB_FILE)
-
     try:
-        elements = []
+        elements = _build_elements(conn, inicio)
+        total_pages = _count_pages(elements)
 
-        # Portada (sin encabezado/pie)
-        construir_portada(elements)
-
-        # Resto del informe con encabezado/pie
-        seccion_descripcion(elements)
-        elements.append(PageBreak())
-
-        seccion_tablas(elements, conn)
-        elements.append(PageBreak())
-
-        seccion_diagrama(elements)
-        elements.append(PageBreak())
-
-        seccion_estadisticas(elements, conn, inicio)
-        elements.append(PageBreak())
-
-        seccion_vistas(elements)
-        elements.append(PageBreak())
-
-        seccion_conclusiones(elements)
-        elements.append(PageBreak())
-
-        seccion_github(elements)
-
-        # Primer paso: contar páginas
-        from io import BytesIO
-        buf = BytesIO()
-        doc_count = SimpleDocTemplate(buf, pagesize=A4,
-                                       leftMargin=MARGEN, rightMargin=MARGEN,
-                                       topMargin=MARGEN + 1.2*cm, bottomMargin=MARGEN + 1.2*cm)
-        doc_count.build(elements[:])  # copia para contar
-        total_pages = doc_count.page
-
-        # Segundo paso: generar PDF definitivo
-        construir_portada_2 = []
-        construir_portada(construir_portada_2)
-
-        elements2 = []
-        construir_portada(elements2)
-        seccion_descripcion(elements2)
-        elements2.append(PageBreak())
-        seccion_tablas(elements2, conn)
-        elements2.append(PageBreak())
-        seccion_diagrama(elements2)
-        elements2.append(PageBreak())
-        seccion_estadisticas(elements2, conn, inicio)
-        elements2.append(PageBreak())
-        seccion_vistas(elements2)
-        elements2.append(PageBreak())
-        seccion_conclusiones(elements2)
-        elements2.append(PageBreak())
-        seccion_github(elements2)
-
+        elements = _build_elements(conn, inicio)
         numerador = NumeradorPaginas(total_pages)
         doc = SimpleDocTemplate(
             OUTPUT_PDF,
@@ -808,8 +716,7 @@ def main():
             author="César Jasser de Jesús",
             subject="Data Warehouse — Big Data / Electiva 1",
         )
-        doc.build(elements2, onFirstPage=numerador, onLaterPages=numerador)
-
+        doc.build(elements, onFirstPage=numerador, onLaterPages=numerador)
     finally:
         conn.close()
 
